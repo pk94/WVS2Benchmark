@@ -11,8 +11,6 @@ dataset:
     - b8
 
 interpolations: # Interpolation methods - HR for WV image downsampling and LR for Sentinel-2 image downsampling
-  HR:
-    - Area
   LR:
     - Linear
     - Bicubic
@@ -44,5 +42,5 @@ build_score_masks: # Methods used to build score masks. Checks if any of the rec
     - hrn_red
     - rams_nir
     - rams_red
-resize_factor: 0.333333 # Resize factor by which LR resolution is divided. This should match the resize factor of SRR
+resize_factor: 0.333333 # Resize factor by which LR resolution is divided. This should match the resize factor of SRR. In most cases this should stay as it is.
 

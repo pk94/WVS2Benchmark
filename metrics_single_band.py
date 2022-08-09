@@ -166,16 +166,11 @@ class Scene:
         return self._id
 
     def _load_wv_multispectral_img(self):
-        img = gdal.Open(join(self._path, "hr_mul.tif"), gdalconst.GA_ReadOnly)
-        img_array = img.ReadAsArray()
-        return img_array.astype(float)
-
-    def _get_resized_wv_band_img(self, new_shape, band, interpolation_method_hr):
-        new_shape = (new_shape[1], new_shape[0])
-        wv_band_image = self._wv_multispectral_img[self._band_matches[band], :]
-        interpolated_wv_img = np.interp(wv_band_image, (wv_band_image.min(), wv_band_image.max()), (0, 255))
-        wv_resized = cv2.resize(interpolated_wv_img.astype(np.uint8), new_shape, interpolation=interpolation_method_hr)
-        return wv_resized
+        band_images = []
+        for ii in range(8):
+            band_img = cv2.imread(join(*[self._path, "hr_resized", f"mul_band_{ii}.tiff"]), cv2.IMREAD_GRAYSCALE)
+            band_images.append(band_img.astype(float))
+        return np.asarray(band_images)
 
     def _get_resized_sentinel_band_imgs(self, resize_factor, interpolation_method_lr):
         new_shape = (int(self.sentinel_images[0].shape[1] / resize_factor),
@@ -201,22 +196,20 @@ class Scene:
             band_images.append(np.interp(img_array, (img_array.min(), img_array.max()), (0, 255)))
         return band_images
 
-    def get_resized_band_images(self, band, resize_factor, interpolation_method_lr, interpolation_method_hr):
+    def get_resized_band_images(self, band, resize_factor, interpolation_method_lr):
         sentinel_resized_band_images = self._get_resized_sentinel_band_imgs(resize_factor, interpolation_method_lr)
-        wv_resized_band_img = self._get_resized_wv_band_img(sentinel_resized_band_images[0].shape,
-                                                            band, interpolation_method_hr)
         sentinel_matched_band_images, sentinel_matched_mean_img = self._match_sentinel_wv_histograms(
-            sentinel_resized_band_images, wv_resized_band_img)
-        return wv_resized_band_img, sentinel_matched_band_images, sentinel_matched_mean_img
+            sentinel_resized_band_images, self._wv_multispectral_img[self._band_matches[band], :])
+        return self._wv_multispectral_img[self._band_matches[band], :], sentinel_matched_band_images, \
+               sentinel_matched_mean_img
 
-    def get_sr_wv_images(self, band, reconstructed_images_path, reconstruction_method, interpolation_method_hr):
+    def get_sr_wv_images(self, band, reconstructed_images_path, reconstruction_method):
         sr_images_paths = join(*[reconstructed_images_path, band, reconstruction_method])
         sr_image_path = [join(sr_images_paths, img_path) for img_path in listdir(sr_images_paths)
                          if self.id == img_path.split(".")[0]][0]
         sr_image = cv2.imread(sr_image_path, cv2.IMREAD_GRAYSCALE)
-        wv_resized_band_img = self._get_resized_wv_band_img(sr_image.shape, band, interpolation_method_hr)
-        sr_matched_image = match_histograms(sr_image, wv_resized_band_img)
-        return wv_resized_band_img, sr_matched_image
+        sr_matched_image = match_histograms(sr_image, self._wv_multispectral_img[self._band_matches[band], :])
+        return self._wv_multispectral_img[self._band_matches[band], :], sr_matched_image
 
 
 class Mask:
@@ -278,11 +271,10 @@ class Mask:
 
 
 class SingleEvaluationResults:
-    def __init__(self, band, mask_mode, reconstruction_method, interpolation_hr, resize_factor):
+    def __init__(self, band, mask_mode, reconstruction_method, resize_factor):
         self._band = band
         self._mask_mode = mask_mode
         self._reconstruction_method = reconstruction_method
-        self._interpolation_hr = interpolation_hr
         self._resize_factor = resize_factor
         self._results = []
 
@@ -294,8 +286,8 @@ class SingleEvaluationResults:
     def reconstruction_method(self):
         return self._reconstruction_method
 
-    def filter(self, band, mask_mode, interpolation_hr, reconstruction_method, resize_factor):
-        return band == self._band and mask_mode == self._mask_mode and interpolation_hr == self._interpolation_hr and \
+    def filter(self, band, mask_mode, reconstruction_method, resize_factor):
+        return band == self._band and mask_mode == self._mask_mode and \
                reconstruction_method == self._reconstruction_method and resize_factor == self._resize_factor
 
     def save(self, save_path):
@@ -303,7 +295,7 @@ class SingleEvaluationResults:
         df.to_csv(join(
             *[save_path,
               "per_scene",
-              f"{self._band}_{self._interpolation_hr}_{self._reconstruction_method}_{self._mask_mode}_"
+              f"{self._band}_{self._reconstruction_method}_{self._mask_mode}_"
               f"{self._resize_factor}.csv"]), index=False)
 
 
@@ -318,10 +310,9 @@ class EvaluationResults:
             for reconstruction_method in self._config["interpolations"]["LR"] + \
                                          list(self._config["reconstructions"].keys()
                                               if self._config["reconstructions"] else []):
-                for interpolation_hr in self._config["interpolations"]["HR"]:
-                    for mask_mode, _ in self._config["dataset"]["masks_paths"].items():
-                        results_database.append(SingleEvaluationResults(
-                            band, mask_mode, reconstruction_method, interpolation_hr, self._config["resize_factor"]))
+                for mask_mode, _ in self._config["dataset"]["masks_paths"].items():
+                    results_database.append(SingleEvaluationResults(
+                        band, mask_mode, reconstruction_method, self._config["resize_factor"]))
         return results_database
 
     def _get_mean_evaluation_results(self, results):
@@ -335,11 +326,11 @@ class EvaluationResults:
         mean_results.insert(0, "Interpolation_method", reconstruction_methods)
         return mean_results
 
-    def add_element(self, element, band, mask_mode, interpolation_hr, reconstruction_method, resize_factor):
+    def add_element(self, element, band, mask_mode, reconstruction_method, resize_factor):
         idx = 0
         for ii, single_ev_result in enumerate(self._results_database):
             idx = ii
-            if single_ev_result.filter(band, mask_mode, interpolation_hr, reconstruction_method, resize_factor):
+            if single_ev_result.filter(band, mask_mode, reconstruction_method, resize_factor):
                 break
         self._results_database[idx].results.append(element)
 
@@ -349,19 +340,18 @@ class EvaluationResults:
         reconstruction_methods = self._config["interpolations"]["LR"] + list(self._config["reconstructions"].keys()
                                                                              if self._config["reconstructions"] else [])
         for band in self._config["dataset"]["bands"]:
-            for interpolation_hr in self._config["interpolations"]["HR"]:
-                for mask_mode, _ in self._config["dataset"]["masks_paths"].items():
-                    results = []
-                    for result in self._results_database:
-                        for reconstruction_method in reconstruction_methods:
-                            if result.filter(band, mask_mode, interpolation_hr, reconstruction_method,
-                                             self._config["resize_factor"]):
-                                results.append(result)
-                    mean_results = self._get_mean_evaluation_results(results)
-                    mean_results.to_csv(
-                        join(*[self._config["results_save_path"], "mean",
-                               f"{band}_{interpolation_hr}_{mask_mode}_{self._config['resize_factor']}.csv"]),
-                        index=False)
+            for mask_mode, _ in self._config["dataset"]["masks_paths"].items():
+                results = []
+                for result in self._results_database:
+                    for reconstruction_method in reconstruction_methods:
+                        if result.filter(band, mask_mode, reconstruction_method,
+                                         self._config["resize_factor"]):
+                            results.append(result)
+                mean_results = self._get_mean_evaluation_results(results)
+                mean_results.to_csv(
+                    join(*[self._config["results_save_path"], "mean",
+                           f"{band}_{mask_mode}_{self._config['resize_factor']}.csv"]),
+                    index=False)
 
 
 class Evaluation:
@@ -385,7 +375,7 @@ class Evaluation:
 
     def calculate_metrics(self, pairs_path):
         scenes_paths = [join(pairs_path, file) for file in listdir(pairs_path)]
-        for scene_path in tqdm(scenes_paths):
+        for scene_path in tqdm(scenes_paths[:1]):
             scene = Scene(scene_path)
             self._calculate_metrics_per_band(scene)
         self._results.save_evaluation_results()
@@ -398,32 +388,27 @@ class Evaluation:
     def _calculate_metrics_per_mask(self, scene, band):
         for mask_mode, masks_path in self._config["dataset"]["masks_paths"].items():
             masks_path += f"_{band}"
-            self._calculate_metrics_per_hr_inter(scene, band, mask_mode, masks_path)
+            self._calculate_metrics_per_lr_inter(scene, band, mask_mode, masks_path)
 
-    def _calculate_metrics_per_hr_inter(self, scene, band, mask_mode, masks_path):
-        for interpolation_hr in self._config["interpolations"]["HR"]:
-            self._calculate_metrics_per_lr_inter(scene, band, mask_mode, masks_path, interpolation_hr)
-
-    def _calculate_metrics_per_lr_inter(self, scene, band, mask_mode, masks_path, interpolation_hr):
+    def _calculate_metrics_per_lr_inter(self, scene, band, mask_mode, masks_path):
         mask = self._get_mask(mask_mode, masks_path, scene.id)
         for interpolation_lr in self._config["interpolations"]["LR"] + list(self._config["reconstructions"].keys()
                                                                             if self._config["reconstructions"] else []):
-            self._calculate_metrics_per_scene(scene, band, mask, interpolation_hr, interpolation_lr)
+            self._calculate_metrics_per_scene(scene, band, mask, interpolation_lr)
         if self._config["save_images"]["masks"]:
             mask.build_score_mask(self._config["results_save_path"], scene.id, band)
 
-    def _calculate_metrics_per_scene(self, scene, band, mask, interpolation_hr, interpolation_lr):
+    def _calculate_metrics_per_scene(self, scene, band, mask, interpolation_lr):
         if interpolation_lr in self._config["interpolations"]["LR"]:
             wv_img, _, reconstructed_image = scene.get_resized_band_images(band, self._config["resize_factor"],
-                                                                           INTERPOLATION_METHODS[interpolation_lr],
-                                                                           INTERPOLATION_METHODS[interpolation_hr])
+                                                                           INTERPOLATION_METHODS[interpolation_lr])
             if self._config["save_images"]["masks"]:
                 if interpolation_lr in self._config["build_score_masks"]["interpolations"]:
                     mask.interpolations.append((interpolation_lr, reconstructed_image))
         else:
             wv_img, reconstructed_image = scene.get_sr_wv_images(
                 band, self._config["dataset"]["reconstructed_images_path"],
-                self._config["reconstructions"][interpolation_lr], INTERPOLATION_METHODS[interpolation_hr])
+                self._config["reconstructions"][interpolation_lr])
             if self._config["save_images"]["masks"]:
                 if interpolation_lr in self._config["build_score_masks"]["reconstructions"]:
                     mask.reconstructions.append((interpolation_lr, reconstructed_image))
@@ -435,7 +420,7 @@ class Evaluation:
                 reconstructed_image.astype(np.uint8),
                 wv_img.astype(np.uint8),
                 mask=mask.mask) for key in self._config["metrics"]}}
-            self._results.add_element(image_metrics_values, band, mask.mask_mode, interpolation_hr, interpolation_lr,
+            self._results.add_element(image_metrics_values, band, mask.mask_mode, interpolation_lr,
                                       self._config["resize_factor"])
         except Exception as e:
             print(e)
