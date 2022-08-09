@@ -1,0 +1,48 @@
+dataset:
+  dataset_path : C:\\Users\\pkowaleczko\\PycharmProjects\\superdeep\\datasets\\matched_full # Path to the MuS2-SR dataset
+  reconstructed_images_path: D:\\deepsent-mzi\\scripts\\predictions\\matched_full # Path to the super-resolved images.
+  masks_paths: # Path to the masks. Black pixels in the masks are the ones that will be taken into account when calculating metrics. When there is no mask use "none: None"
+    none: None
+#    score: results/score_masks/score_masks
+  bands: # Sentinel bands to be processed
+    - b2
+    - b3
+    - b4
+    - b8
+
+interpolations: # Interpolation methods - HR for WV image downsampling and LR for Sentinel-2 image downsampling
+  HR:
+    - Area
+  LR:
+    - Linear
+    - Bicubic
+    - Area
+    - Lanczos
+
+reconstructions: # Names of SR reconstruction methods with the names of the folders in "reconstructed_images_path"
+  hrn_nir: HighResNet_p96_b32_cMSE_ProbaV_bNIR_20220105-143437
+  hrn_red: HighResNet_p96_b32_cMSE_ProbaV_bRED_20220209-101557
+  hrn_sim: HighResNet_p96_b32_cMSE_s2ab_ab5_bb8_20220213-122958
+  rams_nir: RAMS_p96_b32_cMSE_ProbaV_bNIR_20220314-110156
+  rams_red: RAMS_p96_b32_cMSE_ProbaV_bRED_20220310-100617
+  rams_sim: RAMS_p96_b32_cMSE_s2ab_ab5_bb8_20220318-152516
+
+metrics: # Evaluation metrics
+  - LPIPS
+  - cPSNR
+  - cSSIM
+
+results_save_path: results # Path where the results will be saved
+save_images: # If "masks" is True saves scores masks. If "images" are True saves all images processed during the evaluation
+  masks: True
+  images: True
+build_score_masks: # Methods used to build score masks. Checks if any of the reconstructions methods is better than any of the interpolations
+  interpolations:
+    - Bicubic
+  reconstructions:
+    - hrn_nir
+    - hrn_red
+    - rams_nir
+    - rams_red
+resize_factor: 0.333333 # Resize factor by which LR resolution is divided. This should match the resize factor of SRR
+
