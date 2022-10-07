@@ -1,9 +1,8 @@
 dataset:
-  dataset_path : C:\\Users\\pkowaleczko\\PycharmProjects\\superdeep\\datasets\\matched_full # Path to the MuS2-SR dataset
   reconstructed_images_path: D:\\deepsent-mzi\\scripts\\predictions\\matched_full # Path to the super-resolved images.
   masks_paths: # Path to the masks. Black pixels in the masks are the ones that will be taken into account when calculating metrics. When there is no mask use "none: None"
     none: None
-#    score: results/score_masks/score_masks
+    score:  # Keep in mind, that the last folder is not a directory itself, but a list of directories ending with bands number. For example if path is "mask/score_masks" in folder "mask" there must be folders with masks named "score_masks_b2", "score_masks_b3" etc.
   bands: # Sentinel bands to be processed
     - b2
     - b3

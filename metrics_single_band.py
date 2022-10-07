@@ -375,7 +375,7 @@ class Evaluation:
 
     def calculate_metrics(self, pairs_path):
         scenes_paths = [join(pairs_path, file) for file in listdir(pairs_path)]
-        for scene_path in tqdm(scenes_paths[:1]):
+        for scene_path in tqdm(scenes_paths):
             scene = Scene(scene_path)
             self._calculate_metrics_per_band(scene)
         self._results.save_evaluation_results()
@@ -439,9 +439,6 @@ class Evaluation:
         cv2.imwrite(join(images_path, f"hr.jpg"), wv_img)
         cv2.imwrite(join(images_path, f"{interpolation_name}.jpg"), reconstructed_image)
 
-#
-# a = Evaluation("config.yaml")
-# a.calculate_metrics(pairs_path="C:\\Users\\pkowaleczko\\PycharmProjects\\superdeep\\datasets\\matched_full")
 
 
 
