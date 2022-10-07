@@ -6,7 +6,7 @@ import numpy as np
 from tqdm import tqdm
 from pathlib import Path
 from skimage.exposure import match_histograms
-from osgeo import gdal
+from osgeo import gdal, gdalconst
 from shapely.geometry import Polygon
 from sentinel import SentinelScene, get_color_sentinel_img
 from worldview import WorldViewScene, get_color_worldview_img
@@ -233,13 +233,34 @@ def clip_sentinel_to_wv(sentinel_img_path, wv_image_path_pan, wv_image_path_mul,
     proj_win = get_intersection_projection_window(intersection)
     if proj_win:
         gdal.Translate(destName=save_path, srcDS=sentinel_img_path, projWin=proj_win)
-        if wv_image_path_pan and not exists(join(wv_clipped_save_path, "wv_pan.TIF")):
-            gdal.Translate(destName=join(wv_clipped_save_path, "wv_pan.TIF"), srcDS=wv_image_path_pan,
-                           projWin=proj_win)
-        if wv_image_path_mul and not exists(join(wv_clipped_save_path, "wv_mul.TIF")):
-            gdal.Translate(destName=join(wv_clipped_save_path, "wv_mul.TIF"), srcDS=wv_image_path_mul,
-                           projWin=proj_win)
+        if '\\b2\\' in sentinel_img_path:
+            if wv_image_path_pan and not exists(join(wv_clipped_save_path, "wv_pan.TIF")):
+                gdal.Translate(destName=join(wv_clipped_save_path, "wv_pan.TIF"), srcDS=wv_image_path_pan,
+                               projWin=proj_win)
+                process_wv_mg(save_path, join(wv_clipped_save_path, "wv_pan.TIF"))
+            if wv_image_path_mul and not exists(join(wv_clipped_save_path, f"wv_mul.TIF")):
+                gdal.Translate(destName=join(wv_clipped_save_path, f"wv_mul.TIF"), srcDS=wv_image_path_mul,
+                               projWin=proj_win)
+                process_wv_mg(save_path, join(wv_clipped_save_path, f"wv_mul.TIF"))
+                remove(join(wv_clipped_save_path, f"wv_mul.TIF"))
     return True if proj_win else False
+
+
+def process_wv_mg(sentinel_path, wv_path):
+    wv_img = gdal.Open(wv_path, gdalconst.GA_ReadOnly)
+    wv_img = wv_img.ReadAsArray().astype(float)
+    sentinel_img = gdal.Open(sentinel_path, gdalconst.GA_ReadOnly)
+    sentinel_img = sentinel_img.ReadAsArray().astype(float)
+    new_shape = (int(sentinel_img.shape[1] / 0.333333), int(sentinel_img.shape[0] / 0.333333))
+    if wv_img.ndim == 2:
+        interpolated_wv_img = np.interp(wv_img, (wv_img.min(), wv_img.max()), (0, 255))
+        wv_resized = cv2.resize(interpolated_wv_img.astype(np.uint8), new_shape, interpolation=cv2.INTER_AREA)
+        cv2.imwrite(wv_path, wv_resized)
+    if wv_img.ndim == 3:
+        for ii, band_img in enumerate(wv_img):
+            interpolated_wv_img = np.interp(band_img, (band_img.min(), band_img.max()), (0, 255))
+            wv_resized = cv2.resize(interpolated_wv_img.astype(np.uint8), new_shape, interpolation=cv2.INTER_AREA)
+            cv2.imwrite(f"{wv_path.split('.')[0]}_{ii}.TIF", wv_resized)
 
 
 def get_intersection_polygon(wv_image_path, sentinel_image_path):
@@ -378,10 +399,12 @@ def move_sentinel_files(pair_path, bands, save_name):
         lrs_path = join(band_path, "lrs")
         create_directory(lrs_path)
         shutil.move(join("cache", band + ".jp2"), join(lrs_path, save_name))
+    create_directory(join(pair_path, "hr_resized"))
     if exists(join("cache", "wv_pan.TIF")):
-        shutil.move(join("cache", "wv_pan.TIF"), join(pair_path, f"hr_pan.TIF"))
-    if exists(join("cache", "wv_mul.TIF")):
-        shutil.move(join("cache", "wv_mul.TIF"), join(pair_path, f"hr_mul.TIF"))
+        shutil.move(join("cache", "wv_pan.TIF"), join(*[pair_path, "hr_resized", f"pan.TIF"]))
+    for ii in range(8):
+        if exists(join("cache", f"wv_mul_{ii}.TIF")):
+            shutil.move(join("cache", f"wv_mul_{ii}.TIF"), join(*[pair_path, "hr_resized", f"mul_band_{ii}.TIF"]))
     create_directory(join(*[pair_path, "CLD", "20m"]))
     create_directory(join(*[pair_path, "CLD", "60m"]))
     shutil.move(join("cache", "CLD_20m.jp2"), join(*[pair_path, "CLD", "20m", save_name]))
