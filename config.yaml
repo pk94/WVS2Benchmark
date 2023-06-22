@@ -1,8 +1,14 @@
 dataset:
-  reconstructed_images_path: D:\\deepsent-mzi\\scripts\\predictions\\matched_full # Path to the super-resolved images.
+  reconstructed_images_path: path_to_sr_images # Path to the super-resolved images.
   masks_paths: # Path to the masks. Black pixels in the masks are the ones that will be taken into account when calculating metrics. When there is no mask use "none: None"
+    # Keep in mind, that the last folder is not a directory itself, but a list of directories ending with bands number. For example if path is "mask/score_masks" in folder "mask" there must be folders with masks named "score_masks_b2", "score_masks_b3" etc.
     none: None
-    score:  # Keep in mind, that the last folder is not a directory itself, but a list of directories ending with bands number. For example if path is "mask/score_masks" in folder "mask" there must be folders with masks named "score_masks_b2", "score_masks_b3" etc.
+    difference: path_to_MuS2\masks\difference_masks\difference_masks #difference between mean Sentinel LR image and WV-2 HR image (not reported in paper)
+    perceptual: path_to_MuS2\masks\perceptual_masks\perceptual_masks #difference between features extracted by the pretrained VGG16 network
+    difference_newest: path_to_MuS2\masks\difference_masks_newest\difference_masks_newest #difference between most recent Sentinel LR image and WV-2 HR image
+    relevance: path_to_MuS2\masks\relevance_masks\relevance_masks #explained in details in paper
+    final: path_to_MuS2\masks\final_masks\final_masks #binary OR mask of perceptual, difference_newest and relevance masks
+  stats_path: path_to_MuS2\stats.json
   bands: # Sentinel bands to be processed
     - b2
     - b3
@@ -31,9 +37,9 @@ metrics: # Evaluation metrics
 
 results_save_path: results # Path where the results will be saved
 save_images: # If "masks" is True saves scores masks. If "images" are True saves all images processed during the evaluation
-  masks: True
+  masks: False
   images: True
-build_score_masks: # Methods used to build score masks. Checks if any of the reconstructions methods is better than any of the interpolations
+build_relevance_masks: # Methods used to build relevance masks. Checks if any of the reconstructions methods is better than any of the interpolations
   interpolations:
     - Bicubic
   reconstructions:
