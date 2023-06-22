@@ -12,7 +12,7 @@ from osgeo import gdal, gdalconst
 from skimage.exposure import match_histograms
 from skimage.metrics import structural_similarity as ssim
 from tqdm import tqdm
-from helper_functions import get_all_files, create_directory, FeatureExtractor, z_score_norm, StatsUpdate
+from helper_functions import get_all_files, create_directory, FeatureExtractor, z_score_norm
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -351,17 +351,6 @@ class Mask:
         cv2.imwrite(join(*[save_path,
                            f"difference_masks_newest/difference_masks_newest_{band}/", f"mask_{scene_id}.png"]), mask)
 
-    def build_difference_mask_min(self, save_path, scene_id, band, threshold_level=5, downsample_factor=4):
-        create_directory(join(save_path, f"difference_masks_min/difference_masks_min_{band}"))
-        new_shape = (int(self.lr_img.shape[1] / downsample_factor), int(self.lr_img.shape[0] / downsample_factor))
-        downsampled_lr_image = np.stack([cv2.resize(lr_img, new_shape) for lr_img in self.lr_batch_img])
-        downsampled_hr_img = np.stack([cv2.resize(self.hr_img, new_shape) for _ in range(len(self.lr_batch_img))])
-        mask = np.amin(abs(downsampled_hr_img - downsampled_lr_image), axis=0) < threshold_level
-        upsampled_mask = cv2.resize(np.invert(mask).astype(np.uint8) * 255,
-                                    (self.hr_img.shape[1], self.hr_img.shape[0]), interpolation=cv2.INTER_AREA)
-        cv2.imwrite(join(*[save_path, f"difference_masks_min/difference_masks_min_{band}/", f"mask_{scene_id}.png"]),
-                    upsampled_mask)
-
     def build_perceptual_mask(self, feature_extractor, save_path, scene_id, band, stats):
         create_directory(join(save_path, f"perceptual_masks/perceptual_masks_{band}"))
         mask = self._perceptual_mask(band, feature_extractor, cv2.resize(
@@ -517,7 +506,8 @@ class Evaluation:
         for scene_path in tqdm(scenes_paths[:1]):
             scene = Scene(scene_path)
             self._calculate_metrics_per_band(scene)
-        self.feature_extractor.save_stats()
+        if not exists(f"{self._config['results_save_path']}/stats.json"):
+            self.feature_extractor.save_stats()
         if not self._config["save_images"]["masks"]:
             self._results.save_evaluation_results()
 
@@ -548,7 +538,6 @@ class Evaluation:
                     self.feature_extractor, self._config["results_save_path"], scene.id, band, self._stats)
             mask.build_difference_mask_newest(
                 self._config["results_save_path"], scene.id, band, scene.names["sentinel"])
-            mask.build_difference_mask_min(self._config["results_save_path"], scene.id, band)
 
     def _calculate_metrics_per_scene(self, scene, band, mask, interpolation_lr):
         if interpolation_lr in self._config["interpolations"]["LR"]:
@@ -563,7 +552,7 @@ class Evaluation:
             if self._config["save_images"]["masks"]:
                 mask.reconstructions.append((interpolation_lr, reconstructed_image))
         if self._config["save_images"]["images"]:
-            self._save_images(wv_img, reconstructed_image, interpolation_lr, scene.id, mask, band)
+            self._save_images(wv_img, reconstructed_image, interpolation_lr, scene.id)
         if not self._config["save_images"]["masks"]:
             try:
                 image_metrics_values = {**{"scene_filename": scene.id}, **{key: self._metrics.metrics[key](
@@ -583,18 +572,11 @@ class Evaluation:
             mask.load_mask(mask_path)
         return mask
 
-    def _save_images(self, wv_img, reconstructed_image, interpolation_name, scene_id, mask, band):
+    def _save_images(self, wv_img, reconstructed_image, interpolation_name, scene_id):
         images_path = join(*[self._config["results_save_path"], "images", scene_id])
         create_directory(images_path)
         cv2.imwrite(join(images_path, f"hr.jpg"), wv_img)
         cv2.imwrite(join(images_path, f"{interpolation_name}.jpg"), reconstructed_image)
-        if interpolation_name == "hrn_nir" and mask.mask is not None:
-            masked_wv_img = np.invert(mask.mask) * wv_img
-            masked_wv_img[masked_wv_img == 0] = 255
-            masked_reconstructed_image = np.invert(mask.mask) * reconstructed_image
-            masked_reconstructed_image[masked_reconstructed_image == 0] = 255
-            cv2.imwrite(join(images_path, f"hr_masked_{band}_{mask.mask_mode}.jpg"), masked_wv_img)
-            cv2.imwrite(join(images_path, f"{interpolation_name}_masked_{band}_{mask.mask_mode}.jpg"), masked_reconstructed_image)
 
 
 

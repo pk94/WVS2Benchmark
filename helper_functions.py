@@ -5,7 +5,6 @@ import torch
 import numpy as np
 import cv2
 import torchvision.models as models
-import torchvision.transforms as transforms
 from collections import namedtuple
 from osgeo import gdal, gdalconst
 from pyproj import CRS, Transformer
